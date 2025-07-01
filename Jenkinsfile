@@ -5,6 +5,7 @@ pipeline {
     DOCKERHUB_REGISTRY = 'nocnex/nodejs-app-v2'
     DOCKERHUB_CREDENTIALS_ID = 'dockerhublogin'
     CI = 'true'
+    NODE_HOME = "${WORKSPACE}/.nodejs"
   }
 
   stages {
@@ -14,15 +15,15 @@ pipeline {
       }
     }
 
-    stage('Setup Node.js') {
+    stage('Setup Environment') {
       steps {
         script {
-          // Alternative Node.js installation without requiring root
+          // Download the .tar.gz version which doesn't require xz
           sh '''
-            mkdir -p ${WORKSPACE}/.nodejs
-            curl -fsSL https://nodejs.org/dist/v18.20.0/node-v18.20.0-linux-x64.tar.xz -o node.tar.xz
-            tar -xJf node.tar.xz -C ${WORKSPACE}/.nodejs --strip-components=1
-            export PATH="${WORKSPACE}/.nodejs/bin:${PATH}"
+            mkdir -p ${NODE_HOME}
+            curl -fsSL https://nodejs.org/dist/v18.20.0/node-v18.20.0-linux-x64.tar.gz -o node.tar.gz
+            tar -xzf node.tar.gz -C ${NODE_HOME} --strip-components=1
+            export PATH="${NODE_HOME}/bin:${PATH}"
             node --version
             npm --version
           '''
@@ -33,7 +34,7 @@ pipeline {
     stage('Install dependencies') {
       steps {
         sh '''
-          export PATH="${WORKSPACE}/.nodejs/bin:${PATH}"
+          export PATH="${NODE_HOME}/bin:${PATH}"
           npm ci --prefer-offline --audit false
         '''
       }
@@ -42,7 +43,7 @@ pipeline {
     stage('Test') {
       steps {
         sh '''
-          export PATH="${WORKSPACE}/.nodejs/bin:${PATH}"
+          export PATH="${NODE_HOME}/bin:${PATH}"
           npm test
         '''
       }
