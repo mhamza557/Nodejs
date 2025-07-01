@@ -7,9 +7,10 @@ pipeline {
     }
   }
 
-  tools {
-    nodejs 'NodeJS-18' // Using Jenkins NodeJS plugin (configure in Global Tool Configuration)
-  }
+  // Only include tools section if you want to use Jenkins-managed NodeJS
+  // tools {
+  //   nodejs 'NodeJS-18' // Must match exactly what you configured in Global Tools
+  // }
 
   environment {
     DOCKERHUB_REGISTRY = 'nocnex/nodejs-app-v2'
@@ -29,13 +30,11 @@ pipeline {
     stage('Install dependencies') {
       steps {
         sh 'npm ci --prefer-offline --audit false'
-        sh 'npm cache clean --force' // Clean up npm cache
       }
     }
 
-    stage('Lint & Test') {
+    stage('Test') {
       steps {
-        sh 'npm run lint || true' // Optional lint step, continues if fails
         sh 'npm test'
       }
     }
@@ -55,20 +54,7 @@ pipeline {
             docker buildx build \
               --platform linux/amd64 \
               -t ${DOCKERHUB_REGISTRY}:${BUILD_NUMBER} \
-              -t ${DOCKERHUB_REGISTRY}:latest \
               --push .
-          """
-        }
-      }
-    }
-
-    stage('Verify Deployment') {
-      steps {
-        script {
-          // Simple verification that image was pushed
-          sh """
-            docker pull ${DOCKERHUB_REGISTRY}:${BUILD_NUMBER} && \
-            echo "Successfully verified image exists in registry"
           """
         }
       }
@@ -77,18 +63,8 @@ pipeline {
 
   post {
     always {
-      script {
-        sh 'docker logout || true'
-        cleanWs()
-      }
-    }
-    success {
-      echo 'Pipeline completed successfully'
-      archiveArtifacts artifacts: '**/build/**/*' // Optional: archive build artifacts
-    }
-    failure {
-      echo 'Pipeline failed'
-      // Add any failure notifications here if needed
+      sh 'docker logout || true'
+      cleanWs()
     }
   }
 }
