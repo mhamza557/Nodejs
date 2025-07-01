@@ -1,16 +1,5 @@
 pipeline {
-  agent {
-    docker {
-      image 'node:18-alpine'
-      args '--user root'
-      reuseNode true
-    }
-  }
-
-  // Only include tools section if you want to use Jenkins-managed NodeJS
-  // tools {
-  //   nodejs 'NodeJS-18' // Must match exactly what you configured in Global Tools
-  // }
+  agent any
 
   environment {
     DOCKERHUB_REGISTRY = 'nocnex/nodejs-app-v2'
@@ -20,10 +9,23 @@ pipeline {
   }
 
   stages {
-    stage('Checkout & Setup') {
+    stage('Checkout') {
       steps {
         checkout scm
-        sh 'node --version && npm --version'
+      }
+    }
+
+    stage('Setup Node.js') {
+      steps {
+        script {
+          // Install Node.js 18 directly on the agent
+          sh '''
+            curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+            apt-get install -y nodejs
+            node --version
+            npm --version
+          '''
+        }
       }
     }
 
@@ -40,22 +42,30 @@ pipeline {
     }
 
     stage('Build Docker image') {
-      agent {
-        docker {
-          image 'docker:24.0-cli-alpine3.18'
-          args '-v /var/run/docker.sock:/var/run/docker.sock --user root'
-          reuseNode true
-        }
+      when {
+        expression { sh(returnStatus: true, script: 'command -v docker') == 0 }
       }
       steps {
         script {
-          sh 'docker buildx create --use'
-          sh """
-            docker buildx build \
-              --platform linux/amd64 \
-              -t ${DOCKERHUB_REGISTRY}:${BUILD_NUMBER} \
-              --push .
-          """
+          sh 'docker build -t ${DOCKERHUB_REGISTRY}:${BUILD_NUMBER} .'
+        }
+      }
+    }
+
+    stage('Push Docker image') {
+      when {
+        expression { sh(returnStatus: true, script: 'command -v docker') == 0 }
+      }
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: "${dockerhublogin}",
+          passwordVariable: 'DOCKERHUB_PASSWORD',
+          usernameVariable: 'DOCKERHUB_USERNAME'
+        )]) {
+          sh '''
+            echo "${DOCKERHUB_PASSWORD}" | docker login -u ${DOCKERHUB_USERNAME} --password-stdin
+            docker push ${DOCKERHUB_REGISTRY}:${BUILD_NUMBER}
+          '''
         }
       }
     }
@@ -63,8 +73,10 @@ pipeline {
 
   post {
     always {
-      sh 'docker logout || true'
-      cleanWs()
+      script {
+        sh 'command -v docker >/dev/null 2>&1 && docker logout || true'
+        cleanWs()
+      }
     }
   }
 }
