@@ -5,7 +5,6 @@ pipeline {
     DOCKERHUB_REGISTRY = 'nocnex/nodejs-app-v2'
     DOCKERHUB_CREDENTIALS_ID = 'dockerhublogin'
     CI = 'true'
-    NODE_ENV = 'production'
   }
 
   stages {
@@ -18,10 +17,12 @@ pipeline {
     stage('Setup Node.js') {
       steps {
         script {
-          // Install Node.js 18 directly on the agent
+          // Alternative Node.js installation without requiring root
           sh '''
-            curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-            apt-get install -y nodejs
+            mkdir -p ${WORKSPACE}/.nodejs
+            curl -fsSL https://nodejs.org/dist/v18.20.0/node-v18.20.0-linux-x64.tar.xz -o node.tar.xz
+            tar -xJf node.tar.xz -C ${WORKSPACE}/.nodejs --strip-components=1
+            export PATH="${WORKSPACE}/.nodejs/bin:${PATH}"
             node --version
             npm --version
           '''
@@ -31,13 +32,19 @@ pipeline {
 
     stage('Install dependencies') {
       steps {
-        sh 'npm ci --prefer-offline --audit false'
+        sh '''
+          export PATH="${WORKSPACE}/.nodejs/bin:${PATH}"
+          npm ci --prefer-offline --audit false
+        '''
       }
     }
 
     stage('Test') {
       steps {
-        sh 'npm test'
+        sh '''
+          export PATH="${WORKSPACE}/.nodejs/bin:${PATH}"
+          npm test
+        '''
       }
     }
 
@@ -51,32 +58,12 @@ pipeline {
         }
       }
     }
-
-    stage('Push Docker image') {
-      when {
-        expression { sh(returnStatus: true, script: 'command -v docker') == 0 }
-      }
-      steps {
-        withCredentials([usernamePassword(
-          credentialsId: "${dockerhublogin}",
-          passwordVariable: 'DOCKERHUB_PASSWORD',
-          usernameVariable: 'DOCKERHUB_USERNAME'
-        )]) {
-          sh '''
-            echo "${DOCKERHUB_PASSWORD}" | docker login -u ${DOCKERHUB_USERNAME} --password-stdin
-            docker push ${DOCKERHUB_REGISTRY}:${BUILD_NUMBER}
-          '''
-        }
-      }
-    }
   }
 
   post {
     always {
-      script {
-        sh 'command -v docker >/dev/null 2>&1 && docker logout || true'
-        cleanWs()
-      }
+      sh 'command -v docker >/dev/null 2>&1 && docker logout || true'
+      cleanWs()
     }
   }
 }
