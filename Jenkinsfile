@@ -4,31 +4,31 @@ pipeline {
   environment {
     DOCKERHUB_REGISTRY = 'nocnex/nodejs-app-v2'
     DOCKERHUB_CREDENTIALS_ID = 'dockerhublogin'
-    NODE_VERSION = '18.x'  // Using Node.js 18
   }
 
   stages {
     stage('Setup Environment') {
       steps {
         script {
-          // Install Node.js 18 without sudo
+          // Alternative Node.js installation method that doesn't require apt-get
           sh '''
-            curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION} | bash -
-            apt-get update && apt-get install -y nodejs
-            corepack enable  # Enable yarn/pnpm if needed
+            # Download and extract Node.js 18 binaries
+            curl -fsSL https://nodejs.org/dist/v18.20.0/node-v18.20.0-linux-x64.tar.xz -o node.tar.xz
+            mkdir -p /tmp/nodejs
+            tar -xJf node.tar.xz -C /tmp/nodejs --strip-components=1
+            export PATH="/tmp/nodejs/bin:$PATH"
+            
+            # Verify installation
             node --version
             npm --version
           '''
-          
-          // Verify Docker is available
-          sh 'docker --version || echo "Docker not found - ensure Docker is installed and the Jenkins user has permissions"'
         }
       }
     }
 
     stage('Install dependencies') {
       steps {
-        sh 'npm ci'  // Using npm ci for cleaner, reproducible installs
+        sh 'npm ci'
       }
     }
 
@@ -41,8 +41,8 @@ pipeline {
     stage('Build Docker image') {
       steps {
         script {
-          // Build with BuildKit for better performance
-          sh 'DOCKER_BUILDKIT=1 docker build --pull --no-cache -t ${DOCKERHUB_REGISTRY}:${BUILD_NUMBER} .'
+          sh 'docker --version || echo "Docker not available"'
+          sh 'docker build -t ${DOCKERHUB_REGISTRY}:${BUILD_NUMBER} .'
         }
       }
     }
@@ -66,10 +66,7 @@ pipeline {
   post {
     always {
       script {
-        // Clean up Docker login only if Docker is available
         sh 'command -v docker >/dev/null 2>&1 && docker logout || echo "Docker not available for logout"'
-        
-        // Optional: Clean up node_modules to save workspace space
         sh 'rm -rf node_modules || true'
       }
     }
