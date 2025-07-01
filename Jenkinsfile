@@ -4,24 +4,26 @@ pipeline {
   environment {
     DOCKERHUB_REGISTRY = 'nocnex/nodejs-app-v2'
     DOCKERHUB_CREDENTIALS_ID = 'dockerhublogin'
+    NODE_VERSION = '18.20.0'
   }
 
   stages {
     stage('Setup Environment') {
       steps {
         script {
-          // Alternative Node.js installation method that doesn't require apt-get
+          // Method 1: Try downloading the .tar.gz version (doesn't require xz)
           sh '''
-            # Download and extract Node.js 18 binaries
-            curl -fsSL https://nodejs.org/dist/v18.20.0/node-v18.20.0-linux-x64.tar.xz -o node.tar.xz
+            # First try with .tar.gz (no xz needed)
+            curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz -o node.tar.gz
             mkdir -p /tmp/nodejs
-            tar -xJf node.tar.xz -C /tmp/nodejs --strip-components=1
+            tar -xzf node.tar.gz -C /tmp/nodejs --strip-components=1
             export PATH="/tmp/nodejs/bin:$PATH"
-            
-            # Verify installation
             node --version
             npm --version
           '''
+          
+          // Verify Docker is available
+          sh 'docker --version || echo "Docker not found - ensure Docker is installed and the Jenkins user has permissions"'
         }
       }
     }
@@ -41,7 +43,6 @@ pipeline {
     stage('Build Docker image') {
       steps {
         script {
-          sh 'docker --version || echo "Docker not available"'
           sh 'docker build -t ${DOCKERHUB_REGISTRY}:${BUILD_NUMBER} .'
         }
       }
@@ -50,7 +51,7 @@ pipeline {
     stage('Push Docker image') {
       steps {
         withCredentials([usernamePassword(
-          credentialsId: "${DOCKERHUB_CREDENTIALS_ID}",
+          credentialsId: "${dockerhublogin}",
           passwordVariable: 'DOCKERHUB_PASSWORD',
           usernameVariable: 'DOCKERHUB_USERNAME'
         )]) {
