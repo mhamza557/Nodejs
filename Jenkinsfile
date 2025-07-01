@@ -1,36 +1,29 @@
 pipeline {
-  agent any
+  agent {
+    docker {
+      image 'node:18-alpine'  // Smaller footprint than regular node image
+      args '--user root'  // Ensure proper permissions
+      reuseNode true  // Reuse the workspace on the host
+    }
+  }
 
   environment {
     DOCKERHUB_REGISTRY = 'nocnex/nodejs-app-v2'
     DOCKERHUB_CREDENTIALS_ID = 'dockerhublogin'
-    NODE_VERSION = '18.20.0'
+    CI = 'true'  // Standard CI environment variable
   }
 
   stages {
-    stage('Setup Environment') {
+    stage('Checkout & Setup') {
       steps {
-        script {
-          // Method 1: Try downloading the .tar.gz version (doesn't require xz)
-          sh '''
-            # First try with .tar.gz (no xz needed)
-            curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz -o node.tar.gz
-            mkdir -p /tmp/nodejs
-            tar -xzf node.tar.gz -C /tmp/nodejs --strip-components=1
-            export PATH="/tmp/nodejs/bin:$PATH"
-            node --version
-            npm --version
-          '''
-          
-          // Verify Docker is available
-          sh 'docker --version || echo "Docker not found - ensure Docker is installed and the Jenkins user has permissions"'
-        }
+        checkout scm
+        sh 'node --version && npm --version'
       }
     }
 
     stage('Install dependencies') {
       steps {
-        sh 'npm ci'
+        sh 'npm ci --prefer-offline --audit false'
       }
     }
 
@@ -41,24 +34,23 @@ pipeline {
     }
 
     stage('Build Docker image') {
-      steps {
-        script {
-          sh 'docker build -t ${DOCKERHUB_REGISTRY}:${BUILD_NUMBER} .'
+      agent {
+        docker {
+          image 'docker:24.0-cli-alpine3.18'  // Use Docker-in-Docker
+          args '-v /var/run/docker.sock:/var/run/docker.sock --user root'
+          reuseNode true
         }
       }
-    }
-
-    stage('Push Docker image') {
       steps {
-        withCredentials([usernamePassword(
-          credentialsId: "${dockerhublogin}",
-          passwordVariable: 'DOCKERHUB_PASSWORD',
-          usernameVariable: 'DOCKERHUB_USERNAME'
-        )]) {
-          sh '''
-            echo "${DOCKERHUB_PASSWORD}" | docker login -u ${DOCKERHUB_USERNAME} --password-stdin
-            docker push ${DOCKERHUB_REGISTRY}:${BUILD_NUMBER}
-          '''
+        script {
+          sh 'docker buildx create --use'
+          sh """
+            docker buildx build \
+              --platform linux/amd64 \
+              -t ${DOCKERHUB_REGISTRY}:${BUILD_NUMBER} \
+              -t ${DOCKERHUB_REGISTRY}:latest \
+              --push .
+          """
         }
       }
     }
@@ -67,9 +59,15 @@ pipeline {
   post {
     always {
       script {
-        sh 'command -v docker >/dev/null 2>&1 && docker logout || echo "Docker not available for logout"'
-        sh 'rm -rf node_modules || true'
+        sh 'docker logout || true'
+        cleanWs()  // Clean up workspace
       }
+    }
+    success {
+      slackSend color: 'good', message: "Build ${BUILD_NUMBER} succeeded"
+    }
+    failure {
+      slackSend color: 'danger', message: "Build ${BUILD_NUMBER} failed"
     }
   }
 }
