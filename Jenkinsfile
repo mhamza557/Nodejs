@@ -1,27 +1,26 @@
 pipeline {
   agent any
 
-  // Remove the 'tools' section if NodeJS plugin is not installed
-  // If you have NodeJS plugin installed, ensure 'node' is configured in Jenkins Global Tools
-  // tools {
-  //   nodejs 'node'  // 'node' must match a NodeJS installation name in Jenkins config
-  // }
-
   environment {
     DOCKERHUB_REGISTRY = 'nocnex/nodejs-app-v2'
-    DOCKERHUB_CREDENTIALS_ID = 'dockerhublogin'  // Fixed variable name in withCredentials
+    DOCKERHUB_CREDENTIALS_ID = 'dockerhublogin'
   }
 
   stages {
-    stage('Setup Node.js') {
+    stage('Setup Environment') {
       steps {
-        // Alternative if NodeJS plugin isn't installed
-        sh '''
-          curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
-          sudo apt-get install -y nodejs
-          node --version
-          npm --version
-        '''
+        script {
+          // Install Node.js without sudo
+          sh '''
+            curl -fsSL https://deb.nodesource.com/setup_16.x | bash -
+            apt-get update && apt-get install -y nodejs
+            node --version
+            npm --version
+          '''
+          
+          // Verify Docker is available or install it
+          sh 'docker --version || echo "Docker not found, will need to install"'
+        }
       }
     }
 
@@ -47,13 +46,12 @@ pipeline {
 
     stage('Push Docker image') {
       steps {
-        // Fixed credentialsId to match environment variable
         withCredentials([usernamePassword(
-          credentialsId: "${DOCKERHUB_CREDENTIALS_ID}",  // Use the environment variable
+          credentialsId: "${DOCKERHUB_CREDENTIALS_ID}",
           passwordVariable: 'DOCKERHUB_PASSWORD',
           usernameVariable: 'DOCKERHUB_USERNAME'
         )]) {
-          sh 'docker login -u ${DOCKERHUB_USERNAME} -p ${DOCKERHUB_PASSWORD}'
+          sh 'echo "${DOCKERHUB_PASSWORD}" | docker login -u ${DOCKERHUB_USERNAME} --password-stdin'
           sh 'docker push ${DOCKERHUB_REGISTRY}:${BUILD_NUMBER}'
         }
       }
@@ -62,7 +60,10 @@ pipeline {
 
   post {
     always {
-      sh 'docker logout'
+      script {
+        // Only try to logout if docker is available
+        sh 'docker --version && docker logout || echo "Docker not available"'
+      }
     }
   }
 }
