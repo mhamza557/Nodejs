@@ -7,7 +7,7 @@ pipeline {
 
   environment {
     DOCKERHUB_REGISTRY = 'joanroucoux/node-web-app'
-    DOCKERHUB_CREDENTIALS_ID = 'dockerhub'
+    DOCKERHUB_CREDENTIALS_ID = 'dockerhublogin'
   }
 
   stages {
@@ -34,7 +34,7 @@ pipeline {
     stage('Push Docker image') {
       steps {
         withCredentials([usernamePassword(
-          credentialsId: DOCKERHUB_CREDENTIALS_ID,
+          credentialsId: Dockerhublogin,
           passwordVariable: 'DOCKERHUB_PASSWORD',
           usernameVariable: 'DOCKERHUB_USERNAME'
         )]) {
