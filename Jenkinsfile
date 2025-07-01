@@ -6,7 +6,7 @@ pipeline {
   }
 
   environment {
-    DOCKERHUB_REGISTRY = 'joanroucoux/node-web-app'
+    DOCKERHUB_REGISTRY = 'nocnex/nodejs-app-v2'
     DOCKERHUB_CREDENTIALS_ID = 'dockerhublogin'
   }
 
